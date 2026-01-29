@@ -42,9 +42,7 @@ public class ServerMain {
 
                 // se partita piena
                 if (slot == -1) {
-                    PrintWriter out = new PrintWriter(s.getOutputStream(), true);
-                    out.println(error("Partita già piena"));
-                    s.close();
+                    rejectConnection(s, "Partita già piena");
                     continue;
                 }
 
@@ -61,6 +59,12 @@ public class ServerMain {
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    private static void rejectConnection(Socket s, String message) throws IOException {
+        PrintWriter out = new PrintWriter(s.getOutputStream(), true);
+        out.println(error(message));
+        s.close();
     }
 
     // trova slot libero
@@ -121,8 +125,9 @@ public class ServerMain {
         // controllo vittoria
         if (def.allShipsSunk()) {
             String winner = atk.name.isBlank() ? "Player" + (attackerId + 1) : atk.name;
-            atk.send(gameOver(winner));
-            def.send(gameOver(winner));
+            String endMsg = gameOver(winner);
+            atk.send(endMsg);
+            def.send(endMsg);
             return;
         }
 
@@ -170,3 +175,4 @@ public class ServerMain {
         return "{\"type\":\"INCOMING_ATTACK\",\"payload\":{\"x\":" + x + ",\"y\":" + y + ",\"result\":\"" + o.result + "\"}}";
     }
 }
+
