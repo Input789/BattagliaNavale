@@ -4,166 +4,146 @@ import java.io.*;
 import java.net.*;
 import java.util.*;
 
-/**
- * Rappresenta un giocatore sul server.
- * Gestisce la comunicazione socket, la griglia delle navi e lo stato di prontezza.
- */
 public class Player implements Runnable {
-
-    private Socket socket;
-    private BufferedReader in;
-    private PrintWriter out;
-
-    // ID del giocatore (0 o 1)
-    public int id;
-    public String name = "";
-    
-    // Griglia interna delle navi: true = nave presente
-    public boolean[][] shipGrid = new boolean[5][5];
-    
-    // Registro dei colpi effettuati per evitare duplicati
-    public boolean[][] shots = new boolean[5][5];
-    
-    // Stato del giocatore
+    Socket socket;
+    int id;
+    BufferedReader in;
+    PrintWriter out;
     public boolean ready = false;
+    public String name = "";
+    public boolean[][] shots = new boolean[5][5];
 
-    public Player(Socket s, int id) {
+    List<Ship> ships = new ArrayList<>();
+
+    public Player(Socket s, int id) throws IOException {
         this.socket = s;
         this.id = id;
-        try {
-            this.in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            this.out = new PrintWriter(socket.getOutputStream(), true);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        this.in = new BufferedReader(new InputStreamReader(s.getInputStream()));
+        this.out = new PrintWriter(s.getOutputStream(), true);
+        // shots default false
+    }
+
+    public void send(String msg) {
+        out.println(msg);
     }
 
     @Override
     public void run() {
         try {
-            String line;
-            // Resta in ascolto dei messaggi JSON provenienti dal client
-            while ((line = in.readLine()) != null) {
-                
-                // Gestione del JOIN (ricezione nome)
-                if (line.contains("JOIN")) {
-                    this.name = extractString(line, "playerName");
+            String msg;
+            while ((msg = in.readLine()) != null) {
+                if (msg.contains("JOIN")) {
+                    this.name = extractString(msg, "playerName");
                 }
 
-                // Gestione del posizionamento navi
-                if (line.contains("PLACE_SHIPS")) {
-                    parseShips(line);
+                if (msg.contains("PLACE_SHIPS")) {
+                    // parse positions in order and assign to ships sizes [2,2,3]
+                    List<int[]> coords = new ArrayList<>();
+                    int idx = 0;
+                    while (true) {
+                        int ix = msg.indexOf("\"x\":", idx);
+                        if (ix == -1) break;
+                        int s = msg.indexOf(":", ix) + 1;
+                        int e = msg.indexOf("", s);
+                        // simpler parse: read until comma or brace
+                        int e2 = msg.indexOf(",", s);
+                        int e3 = msg.indexOf("}", s);
+                        if (e2 == -1 || (e3 != -1 && e3 < e2)) e2 = e3;
+                        String xs = msg.substring(s, e2).trim();
+                        int x = Integer.parseInt(xs);
+                        // find y after this
+                        int iy = msg.indexOf("\"y\":", e2);
+                        int sy = msg.indexOf(":", iy) + 1;
+                        int ey = msg.indexOf(",", sy);
+                        int ey2 = msg.indexOf("}", sy);
+                        if (ey == -1 || (ey2 != -1 && ey2 < ey)) ey = ey2;
+                        String ys = msg.substring(sy, ey).trim();
+                        int y = Integer.parseInt(ys);
+                        coords.add(new int[]{x, y});
+                        idx = ey + 1;
+                    }
+
+                    // expected sizes
+                    int[] sizes = {2, 2, 3};
+                    int p = 0;
+                    for (int i = 0; i < sizes.length; i++) {
+                        int size = sizes[i];
+                        List<int[]> pos = new ArrayList<>();
+                        for (int k = 0; k < size && p < coords.size(); k++) {
+                            pos.add(coords.get(p++));
+                        }
+                        String nm = (i == 0) ? "Destroyer-1" : (i == 1) ? "Destroyer-2" : "Submarine";
+                        ships.add(new Ship(nm, pos));
+                    }
+
                     this.ready = true;
-                    // Tenta di avviare la partita tramite il main server
                     ServerMain.tryStartGame();
                 }
 
-                // Gestione dell'attacco
-                if (line.contains("ATTACK")) {
-                    int x = extractInt(line, "x");
-                    int y = extractInt(line, "y");
+                if (msg.contains("ATTACK")) {
+                    int x = extract(msg, "x");
+                    int y = extract(msg, "y");
                     ServerMain.handleAttack(this.id, x, y);
                 }
             }
-        } catch (IOException e) {
-            System.out.println("Player " + (id + 1) + " disconnesso.");
+        } catch (Exception e) {
+            // connection closed or error
         } finally {
-            closeConnection();
+            try { socket.close(); } catch (Exception ex) {}
         }
     }
 
-    /**
-     * Invia un messaggio stringa (JSON) al client.
-     */
-    public void send(String msg) {
-        if (out != null) {
-            out.println(msg);
-        }
-    }
-
-    /**
-     * Riceve un attacco e restituisce l'esito (COLPITO, MANCATO, AFFONDATO).
-     */
+    // called by server when this player is attacked
     public AttackOutcome receiveAttack(int x, int y) {
-        AttackOutcome outcome = new AttackOutcome();
-        
-        if (shipGrid[x][y]) {
-            // Segna il colpo sulla nave (false = parte distrutta)
-            shipGrid[x][y] = false; 
-            outcome.result = "HIT";
-            
-            // Logica semplificata: se dopo il colpo è affondata, potresti mappare il nome della nave
-            // Qui manteniamo la compatibilità con il tuo protocollo
-            if (allShipsSunk()) {
-                outcome.result = "SUNK";
-            }
-        } else {
-            outcome.result = "MISS";
-        }
-        
-        return outcome;
-    }
-
-    /**
-     * Controlla se tutte le navi sono state distrutte.
-     */
-    public boolean allShipsSunk() {
-        for (int i = 0; i < 5; i++) {
-            for (int j = 0; j < 5; j++) {
-                if (shipGrid[i][j]) return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * Estrae le navi dal JSON e popola la shipGrid.
-     */
-    private void parseShips(String json) {
-        // Pulizia griglia prima del posizionamento
-        for (int i = 0; i < 5; i++) Arrays.fill(shipGrid[i], false);
-
-        // Parsing manuale semplificato per le coordinate x,y presenti nel JSON
-        // Nota: Questo parser cerca tutte le occorrenze di x e y nel payload
-        String[] parts = json.split("\\{");
-        for (String part : parts) {
-            if (part.contains("\"x\"") && part.contains("\"y\"")) {
-                int x = extractInt("{" + part, "x");
-                int y = extractInt("{" + part, "y");
-                if (x >= 0 && x < 5 && y >= 0 && y < 5) {
-                    shipGrid[x][y] = true;
+        for (Ship s : ships) {
+            for (int i = 0; i < s.positions.size(); i++) {
+                int[] p = s.positions.get(i);
+                if (p[0] == x && p[1] == y) {
+                    if (s.hits.contains(i)) {
+                        return new AttackOutcome("MISS");
+                    }
+                    s.hits.add(i);
+                    if (s.isSunk()) return new AttackOutcome("SUNK", s.name);
+                    return new AttackOutcome("HIT");
                 }
             }
         }
+        return new AttackOutcome("MISS");
     }
 
-    private void closeConnection() {
-        try {
-            if (socket != null) socket.close();
-        } catch (IOException e) {
-            e.printStackTrace();
+    public boolean allShipsSunk() {
+        for (Ship s : ships) if (!s.isSunk()) return false;
+        return true;
+    }
+
+    // helpers to parse simple JSON-ish messages
+    int extract(String msg, String key) {
+        int i = msg.indexOf("\"" + key + "\":");
+        int s = msg.indexOf(":", i) + 1;
+        int e = msg.indexOf(",", s);
+        if (e == -1) e = msg.indexOf("}", s);
+        return Integer.parseInt(msg.substring(s, e).trim());
+    }
+
+    String extractString(String msg, String key) {
+        int i = msg.indexOf("\"" + key + "\":");
+        int s = msg.indexOf("\"", i + key.length() + 3) + 1;
+        int e = msg.indexOf("\"", s);
+        return msg.substring(s, e);
+    }
+
+    static class Ship {
+        String name;
+        List<int[]> positions;
+        Set<Integer> hits = new HashSet<>();
+
+        Ship(String name, List<int[]> pos) {
+            this.name = name;
+            this.positions = pos;
         }
-    }
 
-    // --- Utility di Parsing JSON manuale (stessa logica del client) ---
-
-    private int extractInt(String msg, String key) {
-        try {
-            int i = msg.indexOf("\"" + key + "\":");
-            int s = msg.indexOf(":", i) + 1;
-            int e = msg.indexOf(",", s);
-            if (e == -1) e = msg.indexOf("}", s);
-            if (e == -1) e = msg.indexOf("]", s);
-            return Integer.parseInt(msg.substring(s, e).trim());
-        } catch (Exception e) { return 0; }
-    }
-
-    private String extractString(String msg, String key) {
-        try {
-            int i = msg.indexOf("\"" + key + "\":");
-            int s = msg.indexOf("\"", i + key.length() + 3) + 1;
-            int e = msg.indexOf("\"", s);
-            return msg.substring(s, e);
-        } catch (Exception e) { return ""; }
+        boolean isSunk() {
+            return hits.size() >= positions.size();
+        }
     }
 }
