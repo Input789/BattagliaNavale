@@ -40,7 +40,7 @@ public class ClientMain {
             out = new PrintWriter(socket.getOutputStream(), true);
 
             // thread che ascolta il server
-            new Thread(() -> listenServer()).start();
+            new Thread(ClientMain::listenServer).start();
 
             // inserimento nome player
             System.out.print("Inserisci il tuo nome: ");
@@ -51,19 +51,24 @@ public class ClientMain {
             sendShips();
 
             // loop di gioco
-            while (true) {
+            while (!socket.isClosed()) {
                 if (myTurn) {
                     printGrid();
                     System.out.print("\nInserisci coordinate X Y (0-4): ");
-                    int x = sc.nextInt();
-                    int y = sc.nextInt();
+                    
+                    try {
 
-                    // invio attacco
-                    out.println("{\"type\":\"ATTACK\",\"payload\":{\"x\":" + x + ",\"y\":" + y + "}}");
-                    myTurn = false;
+                        int x = sc.nextInt();
+                        int y = sc.nextInt();
+
+                        out.println(String.format("{\"type\":\"ATTACK\",\"payload\":{\"x\":%d,\"y\":%d}}", x, y)); // Edited: used String.format
+                        myTurn = false;
+                    
+                    } catch (InputMismatchException e) {
+                        System.out.println("Inserire solo numeri validi!");
+                        sc.nextLine();
+                    }
                 }
-
-                // piccola pausa per non saturare la CPU
                 Thread.sleep(100);
             }
 
@@ -153,9 +158,7 @@ public class ClientMain {
 
     // inizializza griglia
     static void initGrid() {
-        for (int i = 0; i < 5; i++)
-            for (int j = 0; j < 5; j++)
-                grid[i][j] = '-';
+        for (char[] row : grid) Arrays.fill(row, '-');
     }
 
     // stampa griglia
@@ -171,18 +174,22 @@ public class ClientMain {
 
     // parsing int JSON
     static int extract(String msg, String key) {
-        int i = msg.indexOf("\"" + key + "\":");
-        int s = msg.indexOf(":", i) + 1;
-        int e = msg.indexOf(",", s);
-        if (e == -1) e = msg.indexOf("}", s);
-        return Integer.parseInt(msg.substring(s, e).trim());
+        try {
+            int i = msg.indexOf("\"" + key + "\":");
+            int s = msg.indexOf(":", i) + 1;
+            int e = msg.indexOf(",", s);
+            if (e == -1) e = msg.indexOf("}", s);
+            return Integer.parseInt(msg.substring(s, e).replace(" ", "").trim());
+        } catch (Exception e) { return 0; }
     }
 
     // parsing string JSON
     static String extractString(String msg, String key) {
-        int i = msg.indexOf("\"" + key + "\":");
-        int s = msg.indexOf("\"", i + key.length() + 3) + 1;
-        int e = msg.indexOf("\"", s);
-        return msg.substring(s, e);
+        try {
+            int i = msg.indexOf("\"" + key + "\":");
+            int s = msg.indexOf("\"", i + key.length() + 3) + 1;
+            int e = msg.indexOf("\"", s);
+            return msg.substring(s, e);
+        } catch (Exception e) { return ""; }
     }
 }
