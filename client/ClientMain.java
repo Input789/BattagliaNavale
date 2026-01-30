@@ -63,7 +63,7 @@ public class ClientMain {
                         int x = sc.nextInt();
                         int y = sc.nextInt();
 
-                        out.println(String.format("{\"type\":\"ATTACK\",\"payload\":{\"x\":%d,\"y\":%d}}", x, y)); // Edited: used String.format
+                        out.println(String.format("{\"type\":\"ATTACK\",\"payload\":{\"x\":%d,\"y\":%d}}", x, y));
                         myTurn = false;
                     
                     } catch (InputMismatchException e) {
