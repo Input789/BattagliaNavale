@@ -101,12 +101,18 @@ public class ServerMain {
         // controllo coordinate
         if (!inBounds(x, y)) {
             atk.send(errorDetails("Mossa non valida", "Coordinate fuori griglia"));
+            // rimanda il turno allo stesso giocatore
+            atk.send(turnChange(true));
+            def.send(turnChange(false));
             return;
         }
 
         // controllo colpo già fatto
         if (atk.shots[x][y]) {
             atk.send(errorDetails("Mossa non valida", "Coordinate già utilizzate"));
+            // rimanda il turno allo stesso giocatore
+            atk.send(turnChange(true));
+            def.send(turnChange(false));
             return;
         }
 
