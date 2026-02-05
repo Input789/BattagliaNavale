@@ -1,6 +1,4 @@
-// Versione commentata e sistemata del server duo-player
 // Server = arbitro, 2 client reali
-// Ogni parte è spiegata passo-passo
 
 package server;
 
@@ -142,8 +140,6 @@ public class ServerMain {
         return x >= 0 && x < 5 && y >= 0 && y < 5;
     }
 
-    // ================= JSON =================
-
     static String gameStart(boolean yourTurn) {
         return "{\"type\":\"GAME_START\",\"payload\":{\"yourTurn\":" + yourTurn + "}}";
     }
@@ -175,4 +171,5 @@ public class ServerMain {
         return "{\"type\":\"INCOMING_ATTACK\",\"payload\":{\"x\":" + x + ",\"y\":" + y + ",\"result\":\"" + o.result + "\"}}";
     }
 }
+
 
