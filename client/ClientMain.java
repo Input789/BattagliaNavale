@@ -82,7 +82,6 @@ public class ClientMain {
         }
     }
 
-    // ================= GRAFICA =================
     static void initGrid() {
         for (char[] row : grid) Arrays.fill(row, '·');
     }
