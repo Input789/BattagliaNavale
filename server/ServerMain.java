@@ -76,7 +76,7 @@ public class ServerMain {
     static synchronized void tryStartGame() {
         // se entrambi connessi e pronti
         if (players[0] != null && players[1] != null &&
-            players[0].ready && players[1].ready) {
+                players[0].ready && players[1].ready) {
 
             currentTurn = 0; // parte player 1
 
@@ -101,18 +101,12 @@ public class ServerMain {
         // controllo coordinate
         if (!inBounds(x, y)) {
             atk.send(errorDetails("Mossa non valida", "Coordinate fuori griglia"));
-            // rimanda il turno allo stesso giocatore
-            atk.send(turnChange(true));
-            def.send(turnChange(false));
             return;
         }
 
         // controllo colpo già fatto
         if (atk.shots[x][y]) {
             atk.send(errorDetails("Mossa non valida", "Coordinate già utilizzate"));
-            // rimanda il turno allo stesso giocatore
-            atk.send(turnChange(true));
-            def.send(turnChange(false));
             return;
         }
 
@@ -136,14 +130,18 @@ public class ServerMain {
         }
 
         // cambio turno
-        currentTurn = 1 - currentTurn;
+        if (out.result.equals("MISS")) {
+            currentTurn = 1 - currentTurn; // Cambia solo se manca il bersaglio
+        }
+        // Se è HIT o SUNK, currentTurn non cambia e il giocatore attacca di nuovo.
+
         players[0].send(turnChange(currentTurn == 0));
         players[1].send(turnChange(currentTurn == 1));
     }
 
     // controllo coordinate
     static boolean inBounds(int x, int y) {
-        return x >= 0 && x < 5 && y >= 0 && y < 5;
+        return x >= 0 && x < 8 && y >= 0 && y < 8;
     }
 
     static String gameStart(boolean yourTurn) {
@@ -177,5 +175,4 @@ public class ServerMain {
         return "{\"type\":\"INCOMING_ATTACK\",\"payload\":{\"x\":" + x + ",\"y\":" + y + ",\"result\":\"" + o.result + "\"}}";
     }
 }
-
 
