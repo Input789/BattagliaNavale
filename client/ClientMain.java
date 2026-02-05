@@ -4,29 +4,16 @@ import java.io.*;
 import java.net.*;
 import java.util.*;
 
-/*
- CLIENT BATTAGLIA NAVALE DUO PLAYER
- - 2 giocatori reali
- - comunica con server
- - invia navi
- - invia attacchi
- - riceve risultati
- - grafica testuale
-   - = sconosciuto
-   X = colpito
-   O = mancato
-*/
 public class ClientMain {
+
+    static final int SIZE = 8; 
 
     static Socket socket;
     static BufferedReader in;
     static PrintWriter out;
     static Scanner sc = new Scanner(System.in);
 
-    // griglia visibile al giocatore
-    static char[][] grid = new char[5][5];
-
-    // indica se è il nostro turno
+    static char[][] grid = new char[SIZE][SIZE];
     static boolean myTurn = false;
 
     public static void main(String[] args) {
@@ -34,41 +21,57 @@ public class ClientMain {
         initGrid();
 
         try {
-            // connessione al server
             socket = new Socket("localhost", 5000);
-            System.out.println("Connesso al server!");
+            System.out.println("\nConnesso al server!");
 
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             out = new PrintWriter(socket.getOutputStream(), true);
 
-            // thread che ascolta il server
             new Thread(ClientMain::listenServer).start();
 
-            // inserimento nome player
             System.out.print("Inserisci il tuo nome: ");
             String name = sc.nextLine();
             out.println("{\"type\":\"JOIN\",\"payload\":{\"playerName\":\"" + name + "\"}}");
 
-            // invio navi
-            sendShips();
+            placeShipsManual();
 
-            // loop di gioco
             while (!socket.isClosed()) {
                 if (myTurn) {
                     printGrid();
-                    System.out.print("\nInserisci coordinate X Y (0-4): ");
-                    
+
                     try {
+                        System.out.print("\nInserisci coordinate ATTACCO X Y (1-"+SIZE+"): ");
 
-                        int x = sc.nextInt();
-                        int y = sc.nextInt();
+                        if(!sc.hasNextInt()){
+                            System.out.println("Input non valido! Usa numeri.");
+                            sc.nextLine();
+                            continue;
+                        }
+                        int x = sc.nextInt() - 1;
 
-                        out.println(String.format("{\"type\":\"ATTACK\",\"payload\":{\"x\":%d,\"y\":%d}}", x, y));
+                        if(!sc.hasNextInt()){
+                            System.out.println("Input non valido! Usa numeri.");
+                            sc.nextLine();
+                            continue;
+                        }
+                        int y = sc.nextInt() - 1;
+
+                        sc.nextLine(); // pulizia buffer
+
+                        if (!inBounds(x,y)){
+                            System.out.println("Coordinate non valide! Usa numeri da 1 a " + SIZE);
+                            continue;
+                        }
+
+                        out.println(String.format(
+                            "{\"type\":\"ATTACK\",\"payload\":{\"x\":%d,\"y\":%d}}", x, y
+                        ));
+
                         myTurn = false;
-                    
-                    } catch (InputMismatchException e) {
-                        System.out.println("Inserire solo numeri validi!");
-                        sc.nextLine();
+
+                    } catch (Exception e) {
+                        System.out.println("Errore input!");
+                        sc.nextLine(); // sicurezza
                     }
                 }
                 Thread.sleep(100);
@@ -79,20 +82,101 @@ public class ClientMain {
         }
     }
 
+    // ================= GRAFICA =================
+    static void initGrid() {
+        for (char[] row : grid) Arrays.fill(row, '·');
+    }
+
+    static void printGrid() {
+        System.out.println("\n     ");
+        System.out.print("    ");
+        for (int i = 1; i <= SIZE; i++) System.out.print(i + " ");
+        System.out.println();
+
+        for (int i = 0; i < SIZE; i++) {
+            System.out.printf("%2d  ", i+1);
+            for (int j = 0; j < SIZE; j++) {
+                System.out.print(grid[i][j] + " ");
+            }
+            System.out.println();
+        }
+    }
+
+    static void placeShipsManual() {
+
+        String[] names = {"Destroyer-1", "Destroyer-2", "Submarine"};
+        int[] sizes = {2, 2, 3};
+
+        List<String> shipsJson = new ArrayList<>();
+        Set<String> usedCoords = new HashSet<>(); // controllo duplicati
+
+        System.out.println("\nPOSIZIONAMENTO NAVI");
+        System.out.println("Formato: X Y  (da 1 a " + SIZE + ")");
+
+        for (int i = 0; i < names.length; i++) {
+            System.out.println("\nPosiziona " + names[i] + " (dimensione " + sizes[i] + ")");
+
+            List<int[]> positions = new ArrayList<>();
+
+            for (int k = 0; k < sizes[i]; k++) {
+                while (true) {
+                    try {
+                        System.out.print("  Blocco " + (k+1) + ": ");
+                        int x = sc.nextInt() - 1; // 1->0
+                        int y = sc.nextInt() - 1;
+
+                        if (!inBounds(x,y)) {
+                            System.out.println("Coordinate fuori griglia!");
+                            continue;
+                        }
+
+                        String key = x + "," + y;
+                        if (usedCoords.contains(key)) {
+                            System.out.println("Coordinate già usate! Inserisci altre coordinate.");
+                            continue;
+                        }
+
+                        usedCoords.add(key);
+                        positions.add(new int[]{x,y});
+                        break;
+
+                    } catch(Exception e) {
+                        System.out.println("Input non valido!");
+                        sc.nextLine();
+                    }
+                }
+            }
+
+            StringBuilder sb = new StringBuilder();
+            sb.append("{\"name\":\"").append(names[i]).append("\",\"size\":").append(sizes[i]).append(",\"positions\":[");
+
+            for (int p = 0; p < positions.size(); p++) {
+                int[] c = positions.get(p);
+                sb.append("{\"x\":").append(c[0]).append(",\"y\":").append(c[1]).append("}");
+                if (p < positions.size()-1) sb.append(",");
+            }
+            sb.append("]}");
+
+            shipsJson.add(sb.toString());
+        }
+
+        String finalJson = "{\"type\":\"PLACE_SHIPS\",\"payload\":{\"ships\":[" + String.join(",", shipsJson) + "]}}";
+
+        out.println(finalJson);
+        System.out.println("\nNavi posizionate correttamente!");
+    }
+
     static void listenServer() {
         try {
             String msg;
             while ((msg = in.readLine()) != null) {
 
-                // start partita
                 if (msg.contains("GAME_START")) {
                     myTurn = msg.contains("true");
                     System.out.println("\nPartita iniziata!");
-                    if (myTurn)
-                        System.out.println("È il tuo turno!");
+                    if (myTurn) System.out.println("--> Tocca a te!");
                 }
 
-                // risultato attacco
                 if (msg.contains("ATTACK_RESULT")) {
                     int x = extract(msg, "x");
                     int y = extract(msg, "y");
@@ -100,40 +184,22 @@ public class ClientMain {
 
                     if (result.equals("HIT") || result.equals("SUNK")) {
                         grid[x][y] = 'X';
-                        System.out.println("\nColpito! 💥");
+                        System.out.println("\nColpito!");
                     } else {
                         grid[x][y] = 'O';
-                        System.out.println("\nMancato 🌊");
+                        System.out.println("\nMancato!");
                     }
                 }
 
-                // attacco ricevuto
-                if (msg.contains("INCOMING_ATTACK")) {
-                    int x = extract(msg, "x");
-                    int y = extract(msg, "y");
-                    String result = extractString(msg, "result");
-
-                    System.out.println("\nAttacco nemico in " + x + "," + y + " → " + result);
-                }
-
-                // cambio turno
                 if (msg.contains("TURN_CHANGE")) {
                     myTurn = msg.contains("true");
-                    if (myTurn)
-                        System.out.println("\nOra è il tuo turno!");
+                    if (myTurn) System.out.println("\n--> È il tuo turno!");
                 }
 
-                // fine partita
                 if (msg.contains("GAME_OVER")) {
                     String winner = extractString(msg, "winner");
-                    System.out.println("\nGAME OVER! Vincitore: " + winner);
+                    System.out.println("\nGAME OVER! Vince: " + winner);
                     System.exit(0);
-                }
-
-                // errori
-                if (msg.contains("ERROR")) {
-                    String err = extractString(msg, "message");
-                    System.out.println("\nErrore: " + err);
                 }
             }
         } catch (Exception e) {
@@ -141,40 +207,10 @@ public class ClientMain {
         }
     }
 
-    static void sendShips() {
-        /*
-         Navi richieste dal server:
-         - Destroyer-1 (2)
-         - Destroyer-2 (2)
-         - Submarine (3)
-        */
-
-        String json = "{\"type\":\"PLACE_SHIPS\",\"payload\":{\"ships\":[" +
-                "{\"name\":\"Destroyer-1\",\"size\":2,\"positions\":[{\"x\":0,\"y\":0},{\"x\":0,\"y\":1}]} ," +
-                "{\"name\":\"Destroyer-2\",\"size\":2,\"positions\":[{\"x\":2,\"y\":0},{\"x\":2,\"y\":1}]} ," +
-                "{\"name\":\"Submarine\",\"size\":3,\"positions\":[{\"x\":4,\"y\":0},{\"x\":4,\"y\":1},{\"x\":4,\"y\":2}]}" +
-                "]}}";
-
-        out.println(json);
+    static boolean inBounds(int x, int y){
+        return x>=0 && x<SIZE && y>=0 && y<SIZE;
     }
 
-    // inizializza griglia
-    static void initGrid() {
-        for (char[] row : grid) Arrays.fill(row, '-');
-    }
-
-    // stampa griglia
-    static void printGrid() {
-        System.out.println("\nGriglia:");
-        for (int i = 0; i < 5; i++) {
-            for (int j = 0; j < 5; j++) {
-                System.out.print(grid[i][j] + " ");
-            }
-            System.out.println();
-        }
-    }
-
-    // parsing int JSON
     static int extract(String msg, String key) {
         try {
             int i = msg.indexOf("\"" + key + "\":");
@@ -185,7 +221,6 @@ public class ClientMain {
         } catch (Exception e) { return 0; }
     }
 
-    // parsing string JSON
     static String extractString(String msg, String key) {
         try {
             int i = msg.indexOf("\"" + key + "\":");
