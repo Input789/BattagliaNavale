@@ -173,7 +173,7 @@ public class ClientMain {
         } else if (res.equals("SUNK")) {
             grid[x][y] = 'S';
             String shipName = extractString(msg, "ship");
-            System.out.println("\n🔥 AFFONDATA! Hai distrutto: " + shipName);
+            System.out.println("\nAFFONDATA! Hai distrutto: " + shipName);
         } else {
             grid[x][y] = 'O';
             System.out.println("\nMancato!");
